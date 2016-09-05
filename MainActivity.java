@@ -3,21 +3,29 @@ package com.example.student.camera2;
 import android.content.pm.PackageManager;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
+import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
+import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.params.StreamConfigurationMap;
+import android.os.Handler;
+import android.os.HandlerThread;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.util.Log;
 import android.util.Size;
+import android.view.Surface;
 import android.view.TextureView;
 import android.widget.Button;
 
-import java.util.jar.Manifest;
+import java.util.Arrays;
+
 
 public class MainActivity extends AppCompatActivity {
     private static final int REQUEST_CAMERA_PERMISSION = 1;
+    private static final String TAG = "TEST_CAMERA";
     TextureView.SurfaceTextureListener textureListener;
     TextureView txvOutput;
     Button btnTakePicture;
@@ -25,6 +33,10 @@ public class MainActivity extends AppCompatActivity {
     Size cameraSize;
     CameraDevice cameraDevice;
     CameraDevice.StateCallback stateCallback;
+    CaptureRequest.Builder captureRequestBuilder;
+    CameraCaptureSession cameraCaptureSession;
+    HandlerThread handlerThread;
+    Handler handler;
 
 
     @Override
@@ -59,6 +71,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onOpened(CameraDevice camera) {
                 cameraDevice = camera;
+                createCameraPreview();
             }
 
             @Override
@@ -77,6 +90,44 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void createCameraPreview() {
+        SurfaceTexture texture = txvOutput.getSurfaceTexture();
+        if (texture == null) {
+            return;
+        }
+        texture.setDefaultBufferSize(cameraSize.getWidth(), cameraSize.getHeight());
+        Surface surface = new Surface(texture);
+        try {
+            captureRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+            captureRequestBuilder.addTarget(surface);
+
+            cameraDevice.createCaptureSession(
+                    Arrays.asList(surface),
+                    new CameraCaptureSession.StateCallback() {
+                        @Override
+                        public void onConfigured(CameraCaptureSession session) {
+                            if (cameraDevice == null) {
+                                return;
+                            }
+                            cameraCaptureSession = session;
+                            captureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO);
+                        }
+
+                        @Override
+                        public void onConfigureFailed(CameraCaptureSession session) {
+
+                        }
+                    },
+                    null);
+
+            cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, handler);
+
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         if (requestCode == REQUEST_CAMERA_PERMISSION) {
@@ -85,10 +136,16 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+
+
     private void openCamera() {
         CameraManager manager = (CameraManager)getSystemService(CAMERA_SERVICE);
+
         try {
             cameraId = manager.getCameraIdList()[0];
+
+            Log.d( TAG, cameraId.toString());
+
             CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraId);
             StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
 
@@ -113,5 +170,14 @@ public class MainActivity extends AppCompatActivity {
 
 
     }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        handlerThread = new HandlerThread("Camera");
+        handler = new Handler(handlerThread.getLooper());
+
+    }
+
 
 }
